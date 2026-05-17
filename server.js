@@ -36,6 +36,13 @@ let cachedIndex = null;
 let cacheAt     = null;
 const CACHE_TTL = 10 * 60 * 1000;
 
+// ─── CSV paths in Dropbox ──────────────────────────────────────────────────
+const CSV_PATHS = {
+  vendors:    "/_Cathy's Order/vendors.csv",
+  categories: "/_Cathy's Order/categories.csv",
+  colors:     "/_Cathy's Order/colors.csv",
+};
+
 // ─── Office hours ──────────────────────────────────────────────────────────
 function isOfficeHours() {
   const now  = new Date();
@@ -187,7 +194,31 @@ function httpsPostBuffer(hostname, reqPath, headers, bodyBuffer) {
   });
 }
 
-// ─── Dropbox ───────────────────────────────────────────────────────────────
+// ─── Dropbox: load CSV files ─────────────────────────────────────────────
+async function loadCSVFromDropbox(type) {
+  const csvPaths = {
+    vendors:    "/_Cathy's Order/vendors.csv",
+    categories: "/_Cathy's Order/categories.csv",
+    colors:     "/_Cathy's Order/colors.csv",
+  };
+  try {
+    const result = await httpsPostBuffer("content.dropboxapi.com", "/2/files/download", {
+      "Authorization":   `Bearer ${CONFIG.DROPBOX_TOKEN}`,
+      "Dropbox-API-Arg": JSON.stringify({ path: csvPaths[type] }),
+      "Content-Type":    ""
+    });
+    if (result.status !== 200) return;
+    csvData[type] = parseCSV(result.buffer.toString());
+    console.log(`  Loaded ${type}: ${csvData[type].length} entries`);
+  } catch(e) { console.error(`  Could not load ${type}:`, e.message); }
+}
+
+async function loadAllCSVs() {
+  console.log("Loading CSVs from Dropbox...");
+  await Promise.all(["vendors","categories","colors"].map(loadCSVFromDropbox));
+}
+
+// ─── Dropbox: index ────────────────────────────────────────────────────────
 async function loadIndex() {
   const now = Date.now();
   if (cachedIndex && cacheAt && (now - cacheAt) < CACHE_TTL) return cachedIndex;
@@ -279,7 +310,7 @@ function scoreAll(photos, queryDesc) {
     let m = 0; qW.forEach(w => { if (pW.has(w)) m++; });
     const score = Math.min(Math.round(((m/(qW.size||1))*0.7+(m/(pW.size||1))*0.3)*100),99);
     return { photo, score };
-  }).filter(r => r.score > 0).sort((a,b) => b.score-a.score).slice(0,30);
+  }).filter(r => r.score > 0).sort((a,b) => b.score-a.score).slice(0,6);
 }
 
 // ─── HTTP helpers ──────────────────────────────────────────────────────────
@@ -440,7 +471,8 @@ http.createServer(async (req, res) => {
 
   res.writeHead(404); res.end("Not found");
 
-}).listen(CONFIG.PORT, () => {
+}).listen(CONFIG.PORT, async () => {
+  await loadAllCSVs();
   console.log(`\n✅  PhotoMatch v7 running on port ${CONFIG.PORT}`);
   console.log(`    Staff: Mon-Fri 8am-6pm Pacific`);
   console.log(`    Manager: 24/7\n`);
