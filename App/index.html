@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>PhotoMatch — SKU Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f2ee;--surface:#fff;--border:#e8e3dc;--text:#1a1714;
+  --muted:#8c8680;--accent:#2c2a27;--gold:#c8a96e;
+  --green:#3d6b4f;--red:#b03a2e;--blue:#2563eb;
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:60px;-webkit-font-smoothing:antialiased}
+
+/* Header */
+header{background:var(--accent);padding:14px 18px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:200;box-shadow:0 2px 12px rgba(0,0,0,.15)}
+.logo{width:34px;height:34px;background:var(--gold);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.logo-name{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:#fff;letter-spacing:-.3px}
+.logo-sub{font-size:10px;color:#7a7572;letter-spacing:.1em;text-transform:uppercase}
+.hdr-right{margin-left:auto;text-align:right}
+.hdr-count{font-size:11px;color:#6aad82}
+.hdr-group{font-size:10px;color:#7a7572;text-transform:uppercase;letter-spacing:.06em}
+
+/* Nav */
+.nav{display:flex;background:var(--accent);border-top:1px solid #3a3835;position:sticky;top:62px;z-index:199}
+.nav-tab{flex:1;padding:10px 4px;text-align:center;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:#7a7572;cursor:pointer;letter-spacing:.06em;text-transform:uppercase;border-bottom:2px solid transparent;transition:all .2s}
+.nav-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+
+/* Screens */
+.screen{display:none;flex-direction:column;gap:14px;padding:16px;max-width:520px;margin:0 auto}
+.screen.active{display:flex}
+
+/* Password */
+#pw-screen{min-height:calc(100vh - 62px);display:flex;align-items:center;justify-content:center;padding:24px}
+.pw-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:36px 28px;width:100%;max-width:360px;text-align:center}
+.pw-icon{font-size:42px;margin-bottom:14px}
+.pw-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:6px}
+.pw-sub{font-size:13px;color:var(--muted);margin-bottom:24px;line-height:1.6}
+.group-tabs{display:flex;gap:8px;margin-bottom:18px}
+.g-tab{flex:1;padding:10px 8px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s}
+.g-tab.active{border-color:var(--gold);background:#fdf9f3;color:var(--accent)}
+.pw-err{font-size:12px;color:var(--red);min-height:18px;margin-bottom:8px}
+
+/* Inputs */
+input[type=text],input[type=password],select{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;background:var(--bg);color:var(--text);outline:none;transition:border-color .2s;appearance:none;-webkit-appearance:none}
+input:focus,select:focus{border-color:var(--gold)}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238c8680' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
+
+/* Buttons */
+.btn{padding:12px 18px;border:none;border-radius:11px;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;letter-spacing:.03em;cursor:pointer;transition:opacity .2s,transform .1s;-webkit-tap-highlight-color:transparent}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-dark{background:var(--accent);color:#fff}
+.btn-ghost{background:transparent;border:1.5px solid var(--border);color:var(--accent)}
+.btn-green{background:var(--green);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-full{width:100%}
+.btn-row{display:flex;gap:8px}
+.btn-row .btn{flex:1}
+
+/* Upload zone */
+.upload-zone{background:var(--surface);border:2px dashed var(--border);border-radius:14px;min-height:180px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;transition:border-color .2s,background .2s}
+.upload-zone:hover{border-color:var(--gold);background:#fdf9f3}
+.upload-zone.filled{border-style:solid;border-color:var(--gold);min-height:unset}
+.upload-ph{text-align:center;padding:28px 20px}
+.upload-ph .icon{font-size:32px;margin-bottom:10px}
+.upload-ph .title{font-family:'Syne',sans-serif;font-weight:700;font-size:15px;margin-bottom:4px}
+.upload-ph .hint{font-size:12px;color:var(--muted)}
+.preview-img{width:100%;max-height:240px;object-fit:contain;display:block}
+
+/* Progress */
+.prog-wrap{display:none}
+.prog-lbl{font-size:12px;color:var(--muted);margin-bottom:6px}
+.prog-track{height:3px;background:var(--border);border-radius:2px}
+.prog-fill{height:100%;background:var(--gold);border-radius:2px;width:0%;transition:width .5s ease}
+
+/* Results grid — 2 columns */
+.results-section{display:none}
+.section-title{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px}
+.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.result-card{background:var(--surface);border:1.5px solid var(--border);border-radius:13px;overflow:hidden;cursor:pointer;transition:border-color .2s,background .2s;animation:fadeUp .3s ease forwards;opacity:0;transform:translateY(5px)}
+.result-card:hover{border-color:var(--gold)}
+.result-card.selected{border-color:var(--gold);background:#fdf9f3;box-shadow:0 0 0 2px var(--gold)}
+@keyframes fadeUp{to{opacity:1;transform:none}}
+.card-img{width:100%;aspect-ratio:1;object-fit:cover;background:var(--bg);display:block}
+.card-img-ph{width:100%;aspect-ratio:1;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--muted)}
+.card-info{padding:8px 10px}
+.card-sku{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+.card-score{font-size:11px;color:var(--muted)}
+.card-best{font-size:9px;font-weight:700;color:var(--gold);letter-spacing:.07em;text-transform:uppercase;margin-bottom:2px}
+.hi{color:var(--green)}.mid{color:var(--gold)}.lo{color:var(--muted)}
+
+/* Action bar */
+.action-bar{display:none;flex-direction:column;gap:8px;padding:14px;background:var(--surface);border-radius:14px;border:1px solid var(--border)}
+.action-title{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+
+/* New product flow */
+.flow-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;flex-direction:column;gap:14px;display:none}
+.flow-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:800}
+.flow-step{display:flex;flex-direction:column;gap:6px}
+.flow-label{font-size:12px;color:var(--muted);font-weight:500}
+
+/* SKU preview */
+.sku-preview-wrap{background:#fdf9f3;border:1.5px solid var(--gold);border-radius:12px;padding:16px;text-align:center;display:none}
+.sku-preview{font-family:'Syne',sans-serif;font-size:32px;font-weight:800;color:var(--gold);letter-spacing:.05em}
+.sku-sub{font-size:11px;color:var(--muted);margin-top:4px}
+
+/* Photo reupload */
+.reupload-zone{background:var(--bg);border:2px dashed var(--border);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:border-color .2s;display:none}
+.reupload-zone:hover{border-color:var(--gold)}
+.reupload-zone.filled{border-style:solid;border-color:var(--gold);padding:0;overflow:hidden}
+.reupload-zone img{width:100%;max-height:160px;object-fit:contain;display:block}
+.reupload-label{font-size:13px;color:var(--muted);margin-bottom:6px}
+.reupload-icon{font-size:24px;margin-bottom:6px}
+
+/* Success box */
+.success-box{display:none;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:13px;padding:18px;text-align:center}
+.success-sku{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;color:var(--green);margin-bottom:4px}
+.success-sub{font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6}
+
+/* Log */
+.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.log-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--accent);color:#fff;padding:9px 10px;text-align:left;font-family:'Syne',sans-serif;font-size:11px;letter-spacing:.05em;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:#fafaf9}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;font-family:'Syne',sans-serif}
+.badge-new{background:#e8f5e9;color:var(--green)}
+.badge-restock{background:#e3f2fd;color:var(--blue)}
+.log-thumb{width:36px;height:36px;border-radius:6px;object-fit:cover}
+
+/* Settings */
+.csv-section{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.csv-row{display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg);border-radius:10px}
+.csv-label{flex:1;font-size:13px;font-weight:500}
+.csv-count{font-size:11px;color:var(--muted)}
+.csv-ok{font-size:14px;color:var(--green)}
+.danger-zone{background:#fff5f5;border:1px solid #fecaca;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.danger-title{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--red);letter-spacing:.08em;text-transform:uppercase}
+.empty{text-align:center;padding:28px 20px;color:var(--muted);font-size:13px;line-height:1.8}
+.switch-grp{text-align:center}
+.switch-grp button{background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif}
+
+/* Toast */
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--accent);color:#fff;padding:9px 20px;border-radius:100px;font-size:13px;white-space:nowrap;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;z-index:999}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🔍</div>
+  <div>
+    <div class="logo-name">PhotoMatch</div>
+    <div class="logo-sub">SKU Manager</div>
+  </div>
+  <div class="hdr-right">
+    <div class="hdr-count" id="hdr-count"></div>
+    <div class="hdr-group" id="hdr-group"></div>
+  </div>
+</header>
+
+<div class="nav" id="nav" style="display:none">
+  <div class="nav-tab active" onclick="showTab('scan')">📷 Scan</div>
+  <div class="nav-tab" onclick="showTab('log')">📋 Log</div>
+  <div class="nav-tab" onclick="showTab('settings')">⚙️ Setup</div>
+</div>
+
+<!-- PASSWORD -->
+<div id="pw-screen">
+  <div class="pw-card">
+    <div class="pw-icon">🔐</div>
+    <div class="pw-title">PhotoMatch</div>
+    <div class="pw-sub">Select your group and enter your password</div>
+    <div class="group-tabs">
+      <button class="g-tab active" id="tab-g1" onclick="selGroup(1)">Group 1</button>
+      <button class="g-tab"        id="tab-g2" onclick="selGroup(2)">Group 2</button>
+    </div>
+    <input type="password" id="pw-input" placeholder="Enter password" autocomplete="off" style="margin-bottom:10px;text-align:center">
+    <div class="pw-err" id="pw-err"></div>
+    <button class="btn btn-gold btn-full" onclick="submitPw()">Access PhotoMatch →</button>
+  </div>
+</div>
+
+<!-- SCAN TAB -->
+<div class="screen active" id="tab-scan">
+
+  <!-- Step 1: Take photo -->
+  <div class="upload-zone" id="upload-zone">
+    <div class="upload-ph" id="upload-ph">
+      <div class="icon">📷</div>
+      <div class="title">Take or upload a photo</div>
+      <div class="hint">Tap to use camera or choose a file</div>
+    </div>
+    <img class="preview-img" id="preview-img" style="display:none">
+  </div>
+  <input type="file" id="file-in"   accept="image/*" style="display:none">
+  <input type="file" id="camera-in" accept="image/*" capture="environment" style="display:none">
+
+  <div class="btn-row">
+    <button class="btn btn-dark"  id="camera-btn">📷 Camera</button>
+    <button class="btn btn-ghost" id="browse-btn">📁 Browse</button>
+  </div>
+
+  <button class="btn btn-gold btn-full" id="search-btn" disabled>Search Similar Items →</button>
+
+  <!-- Progress -->
+  <div class="prog-wrap" id="prog-wrap">
+    <div class="prog-lbl" id="prog-lbl">Analyzing…</div>
+    <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
+  </div>
+
+  <!-- Results: 2-column grid -->
+  <div class="results-section" id="results-section">
+    <div class="section-title">Top 6 Similar Items — Select if existing or tap New Item</div>
+    <div class="result-grid" id="result-grid"></div>
+  </div>
+
+  <!-- Action bar -->
+  <div class="action-bar" id="action-bar">
+    <div class="action-title" id="action-title">What would you like to do?</div>
+    <button class="btn btn-green btn-full" id="restock-btn" style="display:none" onclick="confirmRestock()">✓ This is an Existing Item — Mark Restock</button>
+    <button class="btn btn-gold  btn-full" id="new-item-btn" onclick="startNewItem()">＋ This is a New Item</button>
+  </div>
+
+  <!-- New item flow -->
+  <div class="flow-card" id="flow-card">
+    <div class="flow-title">🆕 New Item — Generate SKU</div>
+
+    <div class="flow-step">
+      <div class="flow-label">1. Select Vendor</div>
+      <select id="sel-vendor" onchange="onVendorChange()"><option value="">— Select Vendor —</option></select>
+    </div>
+
+    <div class="flow-step" id="step-cat" style="display:none">
+      <div class="flow-label">2. Select Category</div>
+      <select id="sel-cat" onchange="onCatChange()"><option value="">— Select Category —</option></select>
+    </div>
+
+    <div class="flow-step" id="step-color" style="display:none">
+      <div class="flow-label">3. Select Color</div>
+      <select id="sel-color" onchange="onColorChange()"><option value="">— Select Color —</option></select>
+    </div>
+
+    <!-- SKU preview -->
+    <div class="sku-preview-wrap" id="sku-preview-wrap">
+      <div class="sku-preview" id="sku-preview">—</div>
+      <div class="sku-sub" id="sku-sub">Checking next available number…</div>
+    </div>
+
+    <!-- Step 4: Re-upload photo -->
+    <div id="step-photo" style="display:none">
+      <div class="flow-label" style="margin-bottom:8px">4. Upload photo of this item</div>
+      <div class="reupload-zone" id="reupload-zone" style="display:block" onclick="document.getElementById('reupload-in').click()">
+        <div class="reupload-icon">📸</div>
+        <div class="reupload-label">Tap to take or choose photo</div>
+        <div style="font-size:11px;color:var(--muted)">This photo will be saved as <strong id="sku-filename-hint">SKU.jpg</strong></div>
+      </div>
+      <img id="reupload-preview" style="display:none;width:100%;max-height:160px;object-fit:contain;border-radius:10px;margin-top:8px">
+      <input type="file" id="reupload-in" accept="image/*" capture="environment" style="display:none">
+    </div>
+
+    <div class="btn-row" id="flow-actions" style="display:none">
+      <button class="btn btn-ghost" onclick="cancelNewItem()">Cancel</button>
+      <button class="btn btn-green" id="confirm-btn" onclick="confirmNewSku()" disabled>✓ Confirm &amp; Save</button>
+    </div>
+  </div>
+
+  <!-- Success box -->
+  <div class="success-box" id="success-box">
+    <div class="success-sku" id="success-sku"></div>
+    <div class="success-sub" id="success-sub"></div>
+    <button class="btn btn-dark" onclick="resetScan()" style="font-size:12px;padding:10px 20px">Scan Another Item</button>
+  </div>
+
+  <div class="switch-grp"><button onclick="switchGroup()">Switch group / sign out</button></div>
+</div>
+
+<!-- LOG TAB -->
+<div class="screen" id="tab-log">
+  <div class="log-header">
+    <span style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700">Shipment Log</span>
+    <button class="btn btn-blue" style="padding:8px 14px;font-size:11px" onclick="exportCSV()">⬇ Export CSV</button>
+  </div>
+  <div class="log-wrap">
+    <table id="log-table">
+      <thead><tr><th>Date</th><th>SKU</th><th>Type</th><th>Vendor</th><th>Photo</th></tr></thead>
+      <tbody id="log-body"></tbody>
+    </table>
+  </div>
+  <div class="empty" id="log-empty" style="display:none">No entries yet.<br><span style="font-size:12px">Scan a product to get started.</span></div>
+</div>
+
+<!-- SETTINGS TAB -->
+<div class="screen" id="tab-settings">
+
+  <div class="csv-section">
+    <div class="section-title">Upload Lists (CSV)</div>
+    <div class="csv-row">
+      <div><div class="csv-label">Vendors</div><div class="csv-count" id="cv-count">Not uploaded</div></div>
+      <input type="file" id="cv-in" accept=".csv" style="display:none" onchange="uploadCSV('vendors',this)">
+      <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;white-space:nowrap" onclick="document.getElementById('cv-in').click()">Upload</button>
+      <span class="csv-ok" id="cv-ok" style="display:none">✓</span>
+    </div>
+    <div class="csv-row">
+      <div><div class="csv-label">Categories</div><div class="csv-count" id="cc-count">Not uploaded</div></div>
+      <input type="file" id="cc-in" accept=".csv" style="display:none" onchange="uploadCSV('categories',this)">
+      <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;white-space:nowrap" onclick="document.getElementById('cc-in').click()">Upload</button>
+      <span class="csv-ok" id="cc-ok" style="display:none">✓</span>
+    </div>
+    <div class="csv-row">
+      <div><div class="csv-label">Colors</div><div class="csv-count" id="col-count">Not uploaded</div></div>
+      <input type="file" id="col-in" accept=".csv" style="display:none" onchange="uploadCSV('colors',this)">
+      <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;white-space:nowrap" onclick="document.getElementById('col-in').click()">Upload</button>
+      <span class="csv-ok" id="col-ok" style="display:none">✓</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.7;padding:4px 0">
+      CSV format — two columns:<br>
+      <code style="background:var(--bg);padding:2px 6px;border-radius:4px">Code,Name</code><br>
+      Example: <code style="background:var(--bg);padding:2px 6px;border-radius:4px">16,Vendor 16</code>
+    </div>
+  </div>
+
+  <div class="csv-section">
+    <div class="section-title">Current Shipment</div>
+    <input type="text" id="shipment-name" placeholder="e.g. Jan 2025 Shipment" value="Current Shipment">
+    <button class="btn btn-dark btn-full" onclick="saveShipment()">Save Shipment Name</button>
+  </div>
+
+  <div class="danger-zone">
+    <div class="danger-title">⚠ Clear Shipment Log</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.6">Clears app log only. Google Sheet keeps all records permanently.</div>
+    <input type="password" id="admin-pw" placeholder="Enter admin password">
+    <button class="btn btn-red btn-full" onclick="clearLog()">Clear Shipment Log</button>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+const S = window.location.origin;
+let pw = null, activeGroup = 1;
+let queryB64 = null, queryMime = null;
+let reuploadB64 = null, reuploadMime = null;
+let selectedCard = null, generatedSku = null;
+let shipmentName = "Current Shipment";
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function api(endpoint, body) {
+  const headers = { "Content-Type": "application/json" };
+  if (pw) headers["X-Password"] = pw;
+  const res  = await fetch(`${S}${endpoint}`, { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json();
+  if (res.status === 401) { pw = null; showPwScreen(); throw new Error("AUTH"); }
+  if (!res.ok) throw new Error(data.error || "Error");
+  return data;
+}
+
+function toast(msg, dur=2800) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), dur);
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+function selGroup(n) {
+  activeGroup = n;
+  document.getElementById("tab-g1").classList.toggle("active", n===1);
+  document.getElementById("tab-g2").classList.toggle("active", n===2);
+  document.getElementById("pw-input").value = "";
+  document.getElementById("pw-err").textContent = "";
+}
+
+async function submitPw() {
+  const p = document.getElementById("pw-input").value.trim();
+  if (!p) return;
+  const btn = document.querySelector("#pw-screen .btn");
+  btn.disabled = true; btn.textContent = "Checking…";
+  pw = p;
+  try {
+    const info = await api("/api/index-info");
+    document.getElementById("hdr-count").textContent = `${(info.count||0).toLocaleString()} photos`;
+    document.getElementById("hdr-group").textContent = document.getElementById(`tab-g${activeGroup}`).textContent;
+    document.getElementById("pw-screen").style.display = "none";
+    document.getElementById("nav").style.display = "flex";
+    showTab("scan");
+    if (info.csvData) {
+      if (info.csvData.vendors?.length)    { window._vendors    = info.csvData.vendors;    updateCount("cv", info.csvData.vendors.length); }
+      if (info.csvData.categories?.length) { window._categories = info.csvData.categories; updateCount("cc", info.csvData.categories.length); }
+      if (info.csvData.colors?.length)     { window._colors     = info.csvData.colors;     updateCount("col", info.csvData.colors.length); }
+    }
+  } catch(e) {
+    if (e.message === "AUTH") document.getElementById("pw-err").textContent = "Incorrect password.";
+    else document.getElementById("pw-err").textContent = "Server error — try again.";
+    pw = null; btn.disabled = false; btn.textContent = "Access PhotoMatch →";
+  }
+}
+
+function showPwScreen() {
+  document.getElementById("pw-screen").style.display = "flex";
+  document.getElementById("nav").style.display = "none";
+}
+function switchGroup() { pw = null; showPwScreen(); resetScan(); }
+document.getElementById("pw-input").addEventListener("keydown", e => { if (e.key==="Enter") submitPw(); });
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
+  document.getElementById(`tab-${name}`).classList.add("active");
+  const map = { scan:0, log:1, settings:2 };
+  document.querySelectorAll(".nav-tab")[map[name]].classList.add("active");
+  if (name === "log") refreshLog();
+}
+
+// ── Image selection ───────────────────────────────────────────────────────────
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    queryB64  = e.target.result.split(",")[1];
+    queryMime = file.type || "image/jpeg";
+    const img = document.getElementById("preview-img");
+    img.src = e.target.result; img.style.display = "block";
+    document.getElementById("upload-ph").style.display = "none";
+    document.getElementById("upload-zone").classList.add("filled");
+    document.getElementById("search-btn").disabled = false;
+    resetResultsArea();
+  };
+  reader.readAsDataURL(file);
+}
+
+document.getElementById("upload-zone").addEventListener("click", () => document.getElementById("file-in").click());
+document.getElementById("browse-btn").addEventListener("click",  () => document.getElementById("file-in").click());
+document.getElementById("camera-btn").addEventListener("click",  () => document.getElementById("camera-in").click());
+document.getElementById("file-in").addEventListener("change",    e => handleFile(e.target.files[0]));
+document.getElementById("camera-in").addEventListener("change",  e => handleFile(e.target.files[0]));
+
+function resetResultsArea() {
+  document.getElementById("results-section").style.display = "none";
+  document.getElementById("action-bar").style.display      = "none";
+  document.getElementById("flow-card").style.display       = "none";
+  document.getElementById("success-box").style.display     = "none";
+  document.getElementById("result-grid").innerHTML         = "";
+  document.getElementById("prog-wrap").style.display       = "none";
+  selectedCard = null; generatedSku = null; reuploadB64 = null;
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+document.getElementById("search-btn").addEventListener("click", runSearch);
+
+async function runSearch() {
+  if (!queryB64) return;
+  const btn = document.getElementById("search-btn");
+  btn.disabled = true; btn.textContent = "Searching…";
+  resetResultsArea();
+  document.getElementById("prog-wrap").style.display = "block";
+  setProgress(15, "Analyzing photo…");
+
+  try {
+    setProgress(50, "Finding similar items…");
+    const data = await api("/api/search", { imageBase64: queryB64, mimeType: queryMime });
+    setProgress(90, "Loading results…");
+    await sleep(200);
+    document.getElementById("prog-wrap").style.display = "none";
+    renderResults(data.results || []);
+  } catch(e) {
+    document.getElementById("prog-wrap").style.display = "none";
+    if (e.message !== "AUTH") toast("Search failed: " + e.message);
+  }
+  btn.disabled = false; btn.textContent = "Search Similar Items →";
+}
+
+function renderResults(results) {
+  const grid = document.getElementById("result-grid");
+  grid.innerHTML = "";
+
+  if (results.length === 0) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1">No similar items found.<br><span style="font-size:12px">Tap New Item below.</span></div>`;
+  } else {
+    results.forEach(({ photo, score }, i) => {
+      const card = document.createElement("div");
+      card.className = "result-card";
+      card.style.animationDelay = `${i*50}ms`;
+      const cls = score>=65?"hi":score>=35?"mid":"lo";
+      const sku = (photo.filename||photo.name||"").replace(/\.[^/.]+$/,"");
+      card.innerHTML = `
+        <div class="card-img-ph" id="cth-${i}">🖼</div>
+        <div class="card-info">
+          ${i===0?'<div class="card-best">★ Best Match</div>':""}
+          <div class="card-sku">${sku}</div>
+          <div class="card-score ${cls}">${score<5?"<5":score}% match</div>
+        </div>`;
+      card.addEventListener("click", () => selectCard(card, photo, sku));
+      grid.appendChild(card);
+      loadThumb(photo.path, i);
+    });
+  }
+
+  document.getElementById("results-section").style.display = "block";
+  document.getElementById("action-bar").style.display      = "flex";
+  document.getElementById("restock-btn").style.display     = "none";
+  document.getElementById("action-title").textContent      = results.length > 0
+    ? "Select a matching photo above, or:" : "No matches found:";
+}
+
+function selectCard(card, photo, sku) {
+  document.querySelectorAll(".result-card").forEach(c => c.classList.remove("selected"));
+  card.classList.add("selected");
+  selectedCard = { photo, sku };
+  document.getElementById("restock-btn").style.display  = "block";
+  document.getElementById("action-title").textContent   = `Selected: ${sku}`;
+}
+
+async function loadThumb(photoPath, index) {
+  try {
+    const data = await api("/api/thumbnail", { path: photoPath });
+    const ph   = document.getElementById(`cth-${index}`);
+    if (!ph || !data.base64) return;
+    const img  = document.createElement("img");
+    img.className = "card-img";
+    img.src = `data:image/jpeg;base64,${data.base64}`;
+    ph.replaceWith(img);
+  } catch(e) {}
+}
+
+// ── Restock ───────────────────────────────────────────────────────────────────
+async function confirmRestock() {
+  if (!selectedCard) { toast("Select a matching item first"); return; }
+  try {
+    await api("/api/restock", { sku: selectedCard.sku, vendor:"", category:"", color:"", photoBase64: queryB64, shipmentName });
+    document.getElementById("action-bar").style.display      = "none";
+    document.getElementById("results-section").style.display = "none";
+    document.getElementById("success-sku").textContent       = selectedCard.sku;
+    document.getElementById("success-sub").textContent       = "Marked as Restock and saved to Google Sheet ✓";
+    document.getElementById("success-box").style.display     = "block";
+    refreshLog();
+    toast(`✓ Restock logged: ${selectedCard.sku}`);
+  } catch(e) { toast("Error: " + e.message); }
+}
+
+// ── New item flow ─────────────────────────────────────────────────────────────
+function startNewItem() {
+  document.getElementById("action-bar").style.display = "none";
+  const fc = document.getElementById("flow-card");
+  fc.style.display = "flex";
+
+  const vSel = document.getElementById("sel-vendor");
+  vSel.innerHTML = '<option value="">— Select Vendor —</option>';
+  (window._vendors||[]).forEach(v => {
+    const o = document.createElement("option");
+    o.value = v.code; o.textContent = `${v.code} — ${v.name}`; vSel.appendChild(o);
+  });
+  document.getElementById("step-cat").style.display        = "none";
+  document.getElementById("step-color").style.display      = "none";
+  document.getElementById("sku-preview-wrap").style.display= "none";
+  document.getElementById("step-photo").style.display      = "none";
+  document.getElementById("flow-actions").style.display    = "none";
+}
+
+function onVendorChange() {
+  const v = document.getElementById("sel-vendor").value;
+  if (!v) { document.getElementById("step-cat").style.display = "none"; return; }
+  const cSel = document.getElementById("sel-cat");
+  cSel.innerHTML = '<option value="">— Select Category —</option>';
+  (window._categories||[]).forEach(c => {
+    const o = document.createElement("option"); o.value = c.code; o.textContent = `${c.name} (${c.code})`; cSel.appendChild(o);
+  });
+  document.getElementById("step-cat").style.display        = "flex";
+  document.getElementById("step-color").style.display      = "none";
+  document.getElementById("sku-preview-wrap").style.display= "none";
+  document.getElementById("step-photo").style.display      = "none";
+  document.getElementById("flow-actions").style.display    = "none";
+}
+
+function onCatChange() {
+  const c = document.getElementById("sel-cat").value;
+  if (!c) { document.getElementById("step-color").style.display = "none"; return; }
+  const colSel = document.getElementById("sel-color");
+  colSel.innerHTML = '<option value="">— Select Color —</option>';
+  (window._colors||[]).forEach(col => {
+    const o = document.createElement("option"); o.value = col.code; o.textContent = `${col.name} (${col.code})`; colSel.appendChild(o);
+  });
+  document.getElementById("step-color").style.display      = "flex";
+  document.getElementById("sku-preview-wrap").style.display= "none";
+  document.getElementById("step-photo").style.display      = "none";
+  document.getElementById("flow-actions").style.display    = "none";
+}
+
+async function onColorChange() {
+  const vendorCode   = document.getElementById("sel-vendor").value;
+  const categoryCode = document.getElementById("sel-cat").value;
+  const colorCode    = document.getElementById("sel-color").value;
+  if (!vendorCode || !categoryCode || !colorCode) return;
+
+  document.getElementById("sku-preview-wrap").style.display = "block";
+  document.getElementById("sku-preview").textContent        = "…";
+  document.getElementById("sku-sub").textContent            = "Checking Google Sheet for next available number…";
+  document.getElementById("step-photo").style.display       = "none";
+  document.getElementById("flow-actions").style.display     = "none";
+
+  try {
+    const data = await api("/api/next-sku", { vendorCode, categoryCode, colorCode });
+    generatedSku = data.sku;
+    document.getElementById("sku-preview").textContent       = data.sku;
+    document.getElementById("sku-sub").textContent           = `Next available number: ${data.number}`;
+    document.getElementById("sku-filename-hint").textContent = `${data.sku}.jpg`;
+    document.getElementById("step-photo").style.display      = "block";
+    document.getElementById("flow-actions").style.display    = "flex";
+    document.getElementById("confirm-btn").disabled          = true; // need photo first
+  } catch(e) { toast("Could not generate SKU: " + e.message); }
+}
+
+// Re-upload photo handler
+document.getElementById("reupload-in").addEventListener("change", e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    reuploadB64  = ev.target.result.split(",")[1];
+    reuploadMime = file.type || "image/jpeg";
+    const zone = document.getElementById("reupload-zone");
+    zone.innerHTML = `<img src="${ev.target.result}" style="width:100%;max-height:160px;object-fit:contain;border-radius:10px">`;
+    zone.classList.add("filled");
+    document.getElementById("confirm-btn").disabled = false;
+    toast("Photo ready — tap Confirm & Save");
+  };
+  reader.readAsDataURL(file);
+});
+
+function cancelNewItem() {
+  document.getElementById("flow-card").style.display  = "none";
+  document.getElementById("action-bar").style.display = "flex";
+}
+
+async function confirmNewSku() {
+  if (!generatedSku || !reuploadB64) { toast("Please upload a photo first"); return; }
+  const vendorCode   = document.getElementById("sel-vendor").value;
+  const categoryCode = document.getElementById("sel-cat").value;
+  const colorCode    = document.getElementById("sel-color").value;
+  const vendorName   = (window._vendors||[]).find(v=>v.code===vendorCode)?.name || vendorCode;
+  const categoryName = (window._categories||[]).find(c=>c.code===categoryCode)?.name || categoryCode;
+  const colorName    = (window._colors||[]).find(c=>c.code===colorCode)?.name || colorCode;
+
+  const btn = document.getElementById("confirm-btn");
+  btn.disabled = true; btn.textContent = "Saving…";
+
+  try {
+    setProgress(20, "Uploading photo to Dropbox…");
+    document.getElementById("prog-wrap").style.display = "block";
+
+    const result = await api("/api/confirm-sku", {
+      sku: generatedSku,
+      vendor: vendorName, vendorCode,
+      category: categoryName, categoryCode,
+      color: colorName, colorCode,
+      photoBase64: reuploadB64,
+      mimeType: reuploadMime,
+      shipmentName
+    });
+
+    setProgress(100, "Done!");
+    await sleep(300);
+    document.getElementById("prog-wrap").style.display = "none";
+    document.getElementById("flow-card").style.display = "none";
+    document.getElementById("results-section").style.display = "none";
+
+    document.getElementById("success-sku").textContent = generatedSku;
+    document.getElementById("success-sub").innerHTML   =
+      `Photo saved to Dropbox as <strong>${result.filename}</strong><br>
+       Saved to New Arrivals folder &amp; Google Sheet ✓<br>
+       Added to search index ✓`;
+    document.getElementById("success-box").style.display = "block";
+    refreshLog();
+    toast(`✓ New SKU created: ${generatedSku}`);
+  } catch(e) {
+    document.getElementById("prog-wrap").style.display = "none";
+    toast("Error saving: " + e.message);
+  }
+  btn.disabled = false; btn.textContent = "✓ Confirm & Save";
+}
+
+function resetScan() {
+  queryB64 = null; reuploadB64 = null; selectedCard = null; generatedSku = null;
+  document.getElementById("preview-img").style.display  = "none";
+  document.getElementById("upload-ph").style.display    = "block";
+  document.getElementById("upload-zone").classList.remove("filled");
+  document.getElementById("search-btn").disabled        = true;
+  resetResultsArea();
+}
+
+// ── Log ───────────────────────────────────────────────────────────────────────
+async function refreshLog() {
+  try {
+    const data = await api("/api/log");
+    const rows = data.log || [];
+    const body = document.getElementById("log-body");
+    body.innerHTML = "";
+    if (rows.length === 0) {
+      document.getElementById("log-empty").style.display = "block";
+      document.querySelector(".log-wrap").style.display  = "none";
+      return;
+    }
+    document.getElementById("log-empty").style.display = "none";
+    document.querySelector(".log-wrap").style.display  = "block";
+    [...rows].reverse().forEach(row => {
+      const tr    = document.createElement("tr");
+      const badge = row.type === "NEW"
+        ? '<span class="badge badge-new">NEW</span>'
+        : '<span class="badge badge-restock">RESTOCK</span>';
+      const thumb = row.photoBase64
+        ? `<img class="log-thumb" src="data:image/jpeg;base64,${row.photoBase64}">`
+        : "—";
+      tr.innerHTML = `<td>${row.date}</td><td><strong>${row.sku}</strong></td><td>${badge}</td><td>${row.vendor||"—"}</td><td>${thumb}</td>`;
+      body.appendChild(tr);
+    });
+  } catch(e) {}
+}
+
+async function exportCSV() {
+  try {
+    const data = await api("/api/log");
+    const rows = data.log || [];
+    if (!rows.length) { toast("No entries to export"); return; }
+    const lines = ["Date,SKU,Type,Vendor,Category,Color,Shipment,Dropbox Path"];
+    rows.forEach(r => lines.push(`${r.date},"${r.sku}",${r.type},"${r.vendor||""}","${r.category||""}","${r.color||""}","${r.shipment||""}","${r.dropboxPath||""}"`));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type:"text/csv" }));
+    a.download = `PhotoMatch_${shipmentName.replace(/\s+/g,"_")}.csv`;
+    a.click();
+    toast("Export downloaded");
+  } catch(e) { toast("Export failed"); }
+}
+
+// ── CSV upload ────────────────────────────────────────────────────────────────
+async function uploadCSV(type, input) {
+  const file = input.files[0]; if (!file) return;
+  const content = await file.text();
+  try {
+    const data   = await api("/api/upload-csv", { type, content });
+    const parsed = content.split("\n").slice(1).map(l => {
+      const p = l.split(",").map(s => s.trim().replace(/^"|"$/g,""));
+      return p.length >= 2 && p[0] ? { code: p[0], name: p[1] } : null;
+    }).filter(Boolean);
+    if (type==="vendors")    window._vendors    = parsed;
+    if (type==="categories") window._categories = parsed;
+    if (type==="colors")     window._colors     = parsed;
+    const map = { vendors:"cv", categories:"cc", colors:"col" };
+    updateCount(map[type], data.count);
+    toast(`✓ ${type} loaded: ${data.count} entries`);
+  } catch(e) { toast("Upload failed: " + e.message); }
+}
+
+function updateCount(prefix, count) {
+  document.getElementById(`${prefix}-count`).textContent = `${count} entries`;
+  document.getElementById(`${prefix}-ok`).style.display  = "inline";
+}
+
+function saveShipment() {
+  shipmentName = document.getElementById("shipment-name").value.trim() || "Current Shipment";
+  toast(`Shipment name saved: ${shipmentName}`);
+}
+
+async function clearLog() {
+  const adminPassword = document.getElementById("admin-pw").value.trim();
+  if (!adminPassword) { toast("Enter admin password first"); return; }
+  try {
+    await api("/api/clear-log", { adminPassword });
+    document.getElementById("admin-pw").value = "";
+    toast("✓ Shipment log cleared");
+    refreshLog();
+  } catch(e) {
+    toast(e.message.includes("Wrong") ? "❌ Wrong admin password" : "Error: " + e.message);
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setProgress(pct, lbl) {
+  document.getElementById("prog-fill").style.width  = pct + "%";
+  document.getElementById("prog-lbl").textContent   = lbl;
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
