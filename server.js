@@ -279,7 +279,7 @@ function scoreAll(photos, queryDesc) {
     let m = 0; qW.forEach(w => { if (pW.has(w)) m++; });
     const score = Math.min(Math.round(((m/(qW.size||1))*0.7+(m/(pW.size||1))*0.3)*100),99);
     return { photo, score };
-  }).filter(r => r.score > 0).sort((a,b) => b.score-a.score).slice(0,6);
+  }).filter(r => r.score > 0).sort((a,b) => b.score-a.score).slice(0,30);
 }
 
 // ─── HTTP helpers ──────────────────────────────────────────────────────────
