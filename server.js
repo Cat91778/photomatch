@@ -83,7 +83,12 @@ function base64url(buf) {
 }
 async function getGoogleToken() {
   let sa;
-  try { sa = JSON.parse(CONFIG.GOOGLE_SERVICE_ACCT); }
+  try {
+    // Fix escaped newlines in private key that get corrupted in Railway
+    const raw = CONFIG.GOOGLE_SERVICE_ACCT.replace(/\\n/g, "\n");
+    sa = JSON.parse(raw);
+    if (sa.private_key) sa.private_key = sa.private_key.replace(/\\n/g, "\n");
+  }
   catch { throw new Error("Invalid GOOGLE_SERVICE_ACCT JSON"); }
   const now     = Math.floor(Date.now() / 1000);
   const header  = base64url(Buffer.from(JSON.stringify({ alg:"RS256", typ:"JWT" })));
