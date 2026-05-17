@@ -1,8 +1,11 @@
 /**
- * PhotoMatch Server v5
+ * PhotoMatch Server v7
  * ════════════════════════════════════════════════════════════════
- * Full SKU management system with Google Sheets permanent record.
- * Auto photo rename + save to New Arrivals folder in Dropbox.
+ * Single login: Name + Password
+ * Staff: Mon-Fri 8am-6pm Pacific
+ * Manager: 24/7
+ * Clear log: either password with confirmation
+ * Google Sheet logs: date, time, who processed it
  * ════════════════════════════════════════════════════════════════
  */
 
@@ -13,41 +16,68 @@ const path   = require("path");
 const url    = require("url");
 const crypto = require("crypto");
 
-// ─── CONFIG ────────────────────────────────────────────────────────────────
 const CONFIG = {
-  DROPBOX_TOKEN:        process.env.DROPBOX_TOKEN        || "",
-  ANTHROPIC_KEY:        process.env.ANTHROPIC_KEY        || "",
-  GROUP1_PASSWORD:      process.env.GROUP1_PASSWORD      || "Group1Pass",
-  GROUP1_NAME:          process.env.GROUP1_NAME          || "Group 1",
-  GROUP2_PASSWORD:      process.env.GROUP2_PASSWORD      || "Group2Pass",
-  GROUP2_NAME:          process.env.GROUP2_NAME          || "Group 2",
-  ADMIN_PASSWORD:       process.env.ADMIN_PASSWORD       || "AdminPass",
-  MAIN_FOLDER:          process.env.MAIN_FOLDER          || "/_Cathy's Order",
-  NEW_ARRIVALS_FOLDER:  process.env.NEW_ARRIVALS_FOLDER  || "/_Cathy's Order/New Arrivals",
-  INDEX_DROPBOX_PATH:   process.env.INDEX_DROPBOX_PATH   || "/_Cathy's Order/photo-index.json",
-  GOOGLE_SHEET_ID:      process.env.GOOGLE_SHEET_ID      || "",
-  GOOGLE_SERVICE_ACCT:  process.env.GOOGLE_SERVICE_ACCT  || "",
-  PORT:                 process.env.PORT                 || 3000,
+  DROPBOX_TOKEN:       process.env.DROPBOX_TOKEN       || "",
+  ANTHROPIC_KEY:       process.env.ANTHROPIC_KEY       || "",
+  STAFF_PASSWORD:      process.env.STAFF_PASSWORD      || "StaffPass",
+  MANAGER_PASSWORD:    process.env.MANAGER_PASSWORD    || "ManagerPass",
+  INDEX_DROPBOX_PATH:  process.env.INDEX_DROPBOX_PATH  || "/_Cathy's Order/photo-index.json",
+  MAIN_FOLDER:         process.env.MAIN_FOLDER         || "/_Cathy's Order",
+  NEW_ARRIVALS_FOLDER: process.env.NEW_ARRIVALS_FOLDER || "/_Cathy's Order/New Arrivals",
+  GOOGLE_SHEET_ID:     process.env.GOOGLE_SHEET_ID     || "",
+  GOOGLE_SERVICE_ACCT: process.env.GOOGLE_SERVICE_ACCT || "",
+  PORT:                process.env.PORT                || 3000,
+  TIMEZONE:            "America/Los_Angeles",
 };
 
-// ─── In-memory state ───────────────────────────────────────────────────────
 let shipmentLog = [];
 let csvData     = { vendors: [], categories: [], colors: [] };
 let cachedIndex = null;
 let cacheAt     = null;
 const CACHE_TTL = 10 * 60 * 1000;
 
-// ─── Google Sheets JWT auth ────────────────────────────────────────────────
+// ─── Office hours ──────────────────────────────────────────────────────────
+function isOfficeHours() {
+  const now  = new Date();
+  const pt   = new Date(now.toLocaleString("en-US", { timeZone: CONFIG.TIMEZONE }));
+  const day  = pt.getDay();
+  const hour = pt.getHours();
+  return day >= 1 && day <= 5 && hour >= 8 && hour < 18;
+}
+
+function getPacificDateTime() {
+  const now = new Date();
+  const pt  = new Date(now.toLocaleString("en-US", { timeZone: CONFIG.TIMEZONE }));
+  const date = pt.toISOString().slice(0, 10);
+  const h    = pt.getHours();
+  const m    = pt.getMinutes().toString().padStart(2, "0");
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12  = (h % 12 || 12).toString();
+  return { date, time: `${h12}:${m} ${ampm}` };
+}
+
+// ─── Auth ──────────────────────────────────────────────────────────────────
+function checkPassword(password) {
+  if (password === CONFIG.MANAGER_PASSWORD) return { valid: true, role: "manager" };
+  if (password === CONFIG.STAFF_PASSWORD) {
+    if (isOfficeHours()) return { valid: true, role: "staff" };
+    return { valid: false, reason: "OUTSIDE_HOURS" };
+  }
+  return { valid: false, reason: "WRONG_PASSWORD" };
+}
+
+function checkClearPassword(password) {
+  return password === CONFIG.STAFF_PASSWORD || password === CONFIG.MANAGER_PASSWORD;
+}
+
+// ─── Google Sheets ─────────────────────────────────────────────────────────
 function base64url(buf) {
   return buf.toString("base64").replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
 }
-
 async function getGoogleToken() {
-  if (!CONFIG.GOOGLE_SERVICE_ACCT) throw new Error("No Google service account configured");
   let sa;
   try { sa = JSON.parse(CONFIG.GOOGLE_SERVICE_ACCT); }
   catch { throw new Error("Invalid GOOGLE_SERVICE_ACCT JSON"); }
-
   const now     = Math.floor(Date.now() / 1000);
   const header  = base64url(Buffer.from(JSON.stringify({ alg:"RS256", typ:"JWT" })));
   const payload = base64url(Buffer.from(JSON.stringify({
@@ -66,7 +96,6 @@ async function getGoogleToken() {
   return result.body.access_token;
 }
 
-// ─── Google Sheets ─────────────────────────────────────────────────────────
 async function sheetsRead(range) {
   const token = await getGoogleToken();
   return new Promise((resolve, reject) => {
@@ -92,45 +121,35 @@ async function sheetsAppend(values) {
 
 async function ensureSheetHeader() {
   try {
-    const data = await sheetsRead("Sheet1!A1:I1");
+    const data = await sheetsRead("Sheet1!A1:K1");
     if (!data.values || data.values.length === 0) {
-      await sheetsAppend([["Date","SKU","Vendor","Category","Color","Type","Shipment","Dropbox Path","Photo Name"]]);
+      await sheetsAppend([["Date","Time","SKU","Vendor","Category","Color","Type","Processed By","Shipment","Dropbox Path","Photo Name"]]);
     }
   } catch(e) { console.error("Sheet header check failed:", e.message); }
 }
 
-// ─── Get next SKU number from Google Sheet ─────────────────────────────────
 async function getNextSkuNumber(vendorCode, categoryCode) {
   try {
-    const data   = await sheetsRead("Sheet1!A:I");
+    const data   = await sheetsRead("Sheet1!A:K");
     const rows   = data.values || [];
     const prefix = `${vendorCode}${categoryCode}`.toUpperCase();
     let   max    = 0;
-
     for (const row of rows) {
-      const sku = (row[1] || "").toString().toUpperCase();
+      const sku = (row[2] || "").toString().toUpperCase();
       if (sku.startsWith(prefix)) {
-        const middle = sku.slice(prefix.length);
-        const num    = parseInt(middle.match(/^(\d+)/)?.[1] || "0", 10);
+        const num = parseInt(sku.slice(prefix.length).match(/^(\d+)/)?.[1] || "0", 10);
         if (num > max) max = num;
       }
     }
-
-    // Also check shipment log in memory
     for (const entry of shipmentLog) {
       const sku = (entry.sku || "").toUpperCase();
       if (sku.startsWith(prefix)) {
-        const middle = sku.slice(prefix.length);
-        const num    = parseInt(middle.match(/^(\d+)/)?.[1] || "0", 10);
+        const num = parseInt(sku.slice(prefix.length).match(/^(\d+)/)?.[1] || "0", 10);
         if (num > max) max = num;
       }
     }
-
     return max + 1;
-  } catch(e) {
-    console.error("SKU lookup failed:", e.message);
-    return 1;
-  }
+  } catch(e) { return 1; }
 }
 
 // ─── HTTPS helpers ─────────────────────────────────────────────────────────
@@ -168,14 +187,7 @@ function httpsPostBuffer(hostname, reqPath, headers, bodyBuffer) {
   });
 }
 
-// ─── Auth ──────────────────────────────────────────────────────────────────
-function checkPassword(password) {
-  if (password === CONFIG.GROUP1_PASSWORD) return { valid: true, group: 1, name: CONFIG.GROUP1_NAME };
-  if (password === CONFIG.GROUP2_PASSWORD) return { valid: true, group: 2, name: CONFIG.GROUP2_NAME };
-  return { valid: false };
-}
-
-// ─── Dropbox: load index ───────────────────────────────────────────────────
+// ─── Dropbox ───────────────────────────────────────────────────────────────
 async function loadIndex() {
   const now = Date.now();
   if (cachedIndex && cacheAt && (now - cacheAt) < CACHE_TTL) return cachedIndex;
@@ -190,12 +202,8 @@ async function loadIndex() {
   return cachedIndex;
 }
 
-function saveIndexToCache(index) {
-  cachedIndex = index;
-  cacheAt     = Date.now();
-}
+function saveIndexToCache(index) { cachedIndex = index; cacheAt = Date.now(); }
 
-// ─── Dropbox: get thumbnail ────────────────────────────────────────────────
 async function getThumbnail(photoPath) {
   const result = await httpsPostBuffer("content.dropboxapi.com", "/2/files/get_thumbnail_v2", {
     "Authorization":   `Bearer ${CONFIG.DROPBOX_TOKEN}`,
@@ -210,39 +218,30 @@ async function getThumbnail(photoPath) {
   return result.buffer.toString("base64");
 }
 
-// ─── Dropbox: upload photo ─────────────────────────────────────────────────
 async function uploadToDropbox(base64Image, filename) {
-  const filePath   = `${CONFIG.NEW_ARRIVALS_FOLDER}/${filename}`;
+  const filePath    = `${CONFIG.NEW_ARRIVALS_FOLDER}/${filename}`;
   const imageBuffer = Buffer.from(base64Image, "base64");
   const result = await httpsPostBuffer("content.dropboxapi.com", "/2/files/upload", {
     "Authorization":   `Bearer ${CONFIG.DROPBOX_TOKEN}`,
-    "Dropbox-API-Arg": JSON.stringify({
-      path: filePath,
-      mode: { ".tag": "overwrite" },
-      autorename: false
-    }),
-    "Content-Type": "application/octet-stream",
-    "Content-Length": imageBuffer.length
+    "Dropbox-API-Arg": JSON.stringify({ path: filePath, mode: { ".tag": "overwrite" }, autorename: false }),
+    "Content-Type":    "application/octet-stream",
+    "Content-Length":  imageBuffer.length
   }, imageBuffer);
   if (result.status !== 200) throw new Error("Failed to upload photo to Dropbox");
   return filePath;
 }
 
-// ─── Dropbox: save index back ──────────────────────────────────────────────
 async function saveIndexToDropbox(index) {
   const buf = Buffer.from(JSON.stringify(index, null, 2));
   await httpsPostBuffer("content.dropboxapi.com", "/2/files/upload", {
     "Authorization":   `Bearer ${CONFIG.DROPBOX_TOKEN}`,
-    "Dropbox-API-Arg": JSON.stringify({
-      path: CONFIG.INDEX_DROPBOX_PATH,
-      mode: { ".tag": "overwrite" }
-    }),
-    "Content-Type":  "application/octet-stream",
-    "Content-Length": buf.length
+    "Dropbox-API-Arg": JSON.stringify({ path: CONFIG.INDEX_DROPBOX_PATH, mode: { ".tag": "overwrite" } }),
+    "Content-Type":    "application/octet-stream",
+    "Content-Length":  buf.length
   }, buf);
 }
 
-// ─── Claude: describe photo ────────────────────────────────────────────────
+// ─── Claude ────────────────────────────────────────────────────────────────
 async function describePhoto(base64Image, mimeType) {
   const result = await httpsPost("api.anthropic.com", "/v1/messages", {
     "x-api-key":         CONFIG.ANTHROPIC_KEY,
@@ -250,8 +249,8 @@ async function describePhoto(base64Image, mimeType) {
     "Content-Type":      "application/json"
   }, {
     model: "claude-haiku-4-5-20251001", max_tokens: 300,
-    system: `Product photo tagger. Respond ONLY with JSON no markdown:
-{"category":"<type>","type":"<specific>","colors":["<color>"],"materials":["<material>"],"style":"<style>","tags":["<5-8 tags>"]}`,
+    system: `Product photo tagger for jewelry/accessories. Respond ONLY with JSON:
+{"category":"<type>","type":"<specific>","colors":["<color>"],"materials":["<material>"],"style":"<style>","tags":["<6-10 tags>"]}`,
     messages: [{ role: "user", content: [
       { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
       { type: "text",  text: "Tag this product." }
@@ -262,7 +261,6 @@ async function describePhoto(base64Image, mimeType) {
   catch { return { category:"", type:"", colors:[], materials:[], style:"", tags:[] }; }
 }
 
-// ─── Similarity scoring ────────────────────────────────────────────────────
 function extractWords(obj) {
   const words = new Set();
   const add = v => {
@@ -281,14 +279,14 @@ function scoreAll(photos, queryDesc) {
     let m = 0; qW.forEach(w => { if (pW.has(w)) m++; });
     const score = Math.min(Math.round(((m/(qW.size||1))*0.7+(m/(pW.size||1))*0.3)*100),99);
     return { photo, score };
-  }).filter(r => r.score > 0).sort((a,b) => b.score-a.score).slice(0, 6);
+  }).filter(r => r.score > 0).sort((a,b) => b.score-a.score).slice(0,6);
 }
 
 // ─── HTTP helpers ──────────────────────────────────────────────────────────
 function setCORS(res) {
   res.setHeader("Access-Control-Allow-Origin",  "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Password");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Password, X-Username");
 }
 function sendJSON(res, status, obj) {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -320,15 +318,17 @@ http.createServer(async (req, res) => {
   setCORS(res);
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
-  // Auth
   if (reqPath.startsWith("/api/")) {
-    const pw   = req.headers["x-password"] || "";
-    const auth = checkPassword(pw);
-    if (!auth.valid) { sendJSON(res, 401, { error: "NEED_PASSWORD" }); return; }
-    req._auth = auth;
+    const password = req.headers["x-password"] || "";
+    const auth     = checkPassword(password);
+    if (!auth.valid) {
+      sendJSON(res, 401, { error: auth.reason });
+      return;
+    }
+    req._auth     = auth;
+    req._username = req.headers["x-username"] || "Unknown";
   }
 
-  // ── GET /api/index-info ──
   if (reqPath === "/api/index-info" && req.method === "GET") {
     try {
       const idx = await loadIndex();
@@ -337,19 +337,16 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // ── POST /api/search ──
   if (reqPath === "/api/search" && req.method === "POST") {
     try {
       const { imageBase64, mimeType } = await readBody(req);
       if (!imageBase64||!mimeType) { sendJSON(res, 400, { error: "Missing image" }); return; }
       const [idx, desc] = await Promise.all([loadIndex(), describePhoto(imageBase64, mimeType)]);
-      const top6 = scoreAll(Object.values(idx.photos||{}), desc);
-      sendJSON(res, 200, { results: top6 });
+      sendJSON(res, 200, { results: scoreAll(Object.values(idx.photos||{}), desc) });
     } catch(e) { sendJSON(res, 500, { error: e.message }); }
     return;
   }
 
-  // ── POST /api/thumbnail ──
   if (reqPath === "/api/thumbnail" && req.method === "POST") {
     try {
       const { path: p } = await readBody(req);
@@ -360,7 +357,6 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // ── POST /api/upload-csv ──
   if (reqPath === "/api/upload-csv" && req.method === "POST") {
     try {
       const { type, content } = await readBody(req);
@@ -371,7 +367,6 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // ── POST /api/next-sku ──
   if (reqPath === "/api/next-sku" && req.method === "POST") {
     try {
       const { vendorCode, categoryCode, colorCode } = await readBody(req);
@@ -382,81 +377,62 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // ── POST /api/confirm-sku ── (new item — upload photo, rename, index)
   if (reqPath === "/api/confirm-sku" && req.method === "POST") {
     try {
       const { sku, vendor, vendorCode, category, categoryCode, color, colorCode, photoBase64, mimeType, shipmentName } = await readBody(req);
-      if (!sku || !photoBase64) { sendJSON(res, 400, { error: "Missing SKU or photo" }); return; }
-
-      // Determine file extension
-      const ext      = (mimeType || "image/jpeg").includes("png") ? ".png" : ".jpg";
-      const filename = `${sku}${ext}`;
-
-      // 1. Upload photo to Dropbox New Arrivals folder
+      if (!sku||!photoBase64) { sendJSON(res, 400, { error: "Missing SKU or photo" }); return; }
+      const ext         = (mimeType||"image/jpeg").includes("png") ? ".png" : ".jpg";
+      const filename    = `${sku}${ext}`;
       const dropboxPath = await uploadToDropbox(photoBase64, filename);
-
-      // 2. Write to Google Sheet
-      const date = new Date().toISOString().slice(0, 10);
+      const { date, time } = getPacificDateTime();
+      const processedBy = req._username;
       await ensureSheetHeader();
-      await sheetsAppend([[date, sku, vendor, category, color, "NEW", shipmentName||"Current", dropboxPath, filename]]);
-
-      // 3. Add to search index immediately
+      await sheetsAppend([[date, time, sku, vendor, category, color, "NEW", processedBy, shipmentName||"Current", dropboxPath, filename]]);
       const index = await loadIndex();
-      const tags  = await describePhoto(photoBase64, mimeType || "image/jpeg");
+      const tags  = await describePhoto(photoBase64, mimeType||"image/jpeg");
       const newId = `new_${Date.now()}`;
-      index.photos[newId] = {
-        id: newId, name: filename,
-        filename: sku,
-        path: dropboxPath,
-        tags, indexed: new Date().toISOString(),
-        isNewArrival: true
-      };
+      index.photos[newId] = { id:newId, name:filename, filename:sku, path:dropboxPath, tags, indexed:new Date().toISOString(), isNewArrival:true };
       index.lastUpdated = new Date().toISOString();
       saveIndexToCache(index);
-      // Save updated index back to Dropbox
       await saveIndexToDropbox(index);
-
-      // 4. Add to shipment log
-      const entry = { id: Date.now().toString(), date, sku, vendor, vendorCode, category, categoryCode, color, colorCode, type: "NEW", photoBase64, dropboxPath, filename, shipment: shipmentName||"Current" };
+      const entry = { id:Date.now().toString(), date, time, sku, vendor, vendorCode, category, categoryCode, color, colorCode, type:"NEW", processedBy, photoBase64, dropboxPath, filename, shipment:shipmentName||"Current" };
       shipmentLog.push(entry);
-
-      sendJSON(res, 200, { ok: true, sku, dropboxPath, filename });
+      sendJSON(res, 200, { ok:true, sku, dropboxPath, filename });
     } catch(e) { sendJSON(res, 500, { error: e.message }); }
     return;
   }
 
-  // ── POST /api/restock ──
   if (reqPath === "/api/restock" && req.method === "POST") {
     try {
       const { sku, vendor, category, color, photoBase64, shipmentName } = await readBody(req);
-      const date  = new Date().toISOString().slice(0, 10);
+      const { date, time } = getPacificDateTime();
+      const processedBy = req._username;
       await ensureSheetHeader();
-      await sheetsAppend([[date, sku, vendor||"", category||"", color||"", "RESTOCK", shipmentName||"Current", "", ""]]);
-      const entry = { id: Date.now().toString(), date, sku, vendor, category, color, type: "RESTOCK", photoBase64, shipment: shipmentName||"Current" };
+      await sheetsAppend([[date, time, sku, vendor||"", category||"", color||"", "RESTOCK", processedBy, shipmentName||"Current", "", ""]]);
+      const entry = { id:Date.now().toString(), date, time, sku, vendor, category, color, type:"RESTOCK", processedBy, photoBase64, shipment:shipmentName||"Current" };
       shipmentLog.push(entry);
-      sendJSON(res, 200, { ok: true, entry });
+      sendJSON(res, 200, { ok:true, entry });
     } catch(e) { sendJSON(res, 500, { error: e.message }); }
     return;
   }
 
-  // ── GET /api/log ──
   if (reqPath === "/api/log" && req.method === "GET") {
     sendJSON(res, 200, { log: shipmentLog });
     return;
   }
 
-  // ── POST /api/clear-log ──
   if (reqPath === "/api/clear-log" && req.method === "POST") {
     try {
-      const { adminPassword } = await readBody(req);
-      if (adminPassword !== CONFIG.ADMIN_PASSWORD) { sendJSON(res, 403, { error: "Wrong admin password" }); return; }
+      const { confirmPassword } = await readBody(req);
+      if (!checkClearPassword(confirmPassword)) {
+        sendJSON(res, 403, { error: "Wrong password" }); return;
+      }
       shipmentLog = [];
       sendJSON(res, 200, { ok: true });
     } catch(e) { sendJSON(res, 500, { error: e.message }); }
     return;
   }
 
-  // ── Serve static ──
   if (reqPath === "/" || reqPath === "/index.html") {
     serveStatic(res, path.join(__dirname, "app", "index.html"));
     return;
@@ -465,9 +441,7 @@ http.createServer(async (req, res) => {
   res.writeHead(404); res.end("Not found");
 
 }).listen(CONFIG.PORT, () => {
-  console.log(`\n✅  PhotoMatch v5 running on port ${CONFIG.PORT}`);
-  console.log(`    Main folder:        ${CONFIG.MAIN_FOLDER}`);
-  console.log(`    New Arrivals:       ${CONFIG.NEW_ARRIVALS_FOLDER}`);
-  console.log(`    Index path:         ${CONFIG.INDEX_DROPBOX_PATH}`);
-  console.log(`    Google Sheet ID:    ${CONFIG.GOOGLE_SHEET_ID||"NOT SET"}\n`);
+  console.log(`\n✅  PhotoMatch v7 running on port ${CONFIG.PORT}`);
+  console.log(`    Staff: Mon-Fri 8am-6pm Pacific`);
+  console.log(`    Manager: 24/7\n`);
 });
