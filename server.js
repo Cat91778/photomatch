@@ -135,12 +135,50 @@ async function ensureSheetHeader() {
   } catch(e) { console.error("Sheet header check failed:", e.message); }
 }
 
+
+// ─── Starting SKU numbers (last used per vendor+category) ─────────────────
+const SKU_STARTING = {
+  "16B":82,"16E":77,"16N":36,"16R":19,
+  "822B":82,"822E":3,"822R":29,
+  "92E":9,"92N":10,
+  "AAK":9,"AB":236,"AE":90,"AHT":35,"AN":238,"APC":90,"APD":59,"AR":30,
+  "B1E":26,"B2B":2,"B2E":45,"B2N":2,"B2R":29,
+  "B3B":42,"B3E":89,"B3N":32,"B3R":44,
+  "B4E":5,"B6E":5,"B6R":3,"B7B":4,
+  "BC":14,"BG":99,"CC":564,
+  "D1B":5,"D1E":3,"D2B":4,"D2E":4,"D2N":24,
+  "KB":28,"KE":1,"KN":149,"KR":5,
+  "LB":212,"LE":314,"LN":34,"LPD":187,"LR":462,
+  "MB":43,"ME":33,"MH":16,"MN":270,
+  "O":4,"R":53,
+  "S1B":26,"S1C":1,"S1E":47,"S1N":104,"S1R":51,
+  "S2B":7,"S2E":1,"S2N":14,
+  "S3E":44,"S4B":2,"S4N":5,
+  "S5B":2,"S5E":4,"S5N":15,"S5R":1,
+  "S6B":2,"S6N":187,"S6R":29,
+  "S7N":25,
+  "S8A":10,"S8B":46,"S8E":57,"S8H":16,"S8N":135,"S8R":52,"S8WC":1,
+  "S9B":16,"S9E":3,"S9N":3,"S9R":8,
+  "SCARF":33,"SCF":159,
+  "T1N":5,"T2E":17,"T2N":4,"T2R":1,
+  "T3P":1,"T4E":1,"T4N":8,"T4R":19,
+  "T5E":1,"T5N":6,
+  "T7B":2,"T7E":10,"T7HC":1,"T7N":30,"T7R":14,
+  "TB":1,"TPC":3,
+  "YB":7,"YE":5,"YNK":24,"YPC":2,
+  "Z1B":24,"Z2B":12,"Z2E":2,"Z2N":9,
+  "Z3B":16,"Z3N":4,"Z3R":5,
+  "Z4N":8,"Z5E":3,
+};
+
 async function getNextSkuNumber(vendorCode, categoryCode) {
+  const prefix = `${vendorCode}${categoryCode}`.toUpperCase();
+  let max = SKU_STARTING[prefix] || 0;
+
+  // Also check Google Sheet for any newer entries
   try {
-    const data   = await sheetsRead("Sheet1!A:K");
-    const rows   = data.values || [];
-    const prefix = `${vendorCode}${categoryCode}`.toUpperCase();
-    let   max    = 0;
+    const data = await sheetsRead("Sheet1!A:K");
+    const rows = data.values || [];
     for (const row of rows) {
       const sku = (row[2] || "").toString().toUpperCase();
       if (sku.startsWith(prefix)) {
@@ -148,15 +186,17 @@ async function getNextSkuNumber(vendorCode, categoryCode) {
         if (num > max) max = num;
       }
     }
-    for (const entry of shipmentLog) {
-      const sku = (entry.sku || "").toUpperCase();
-      if (sku.startsWith(prefix)) {
-        const num = parseInt(sku.slice(prefix.length).match(/^(\d+)/)?.[1] || "0", 10);
-        if (num > max) max = num;
-      }
+  } catch(e) { console.log("Sheet read failed, using local starting numbers"); }
+
+  // Also check current shipment log
+  for (const entry of shipmentLog) {
+    const sku = (entry.sku || "").toUpperCase();
+    if (sku.startsWith(prefix)) {
+      const num = parseInt(sku.slice(prefix.length).match(/^(\d+)/)?.[1] || "0", 10);
+      if (num > max) max = num;
     }
-    return max + 1;
-  } catch(e) { return 1; }
+  }
+  return max + 1;
 }
 
 // ─── HTTPS helpers ─────────────────────────────────────────────────────────
@@ -280,16 +320,62 @@ async function describePhoto(base64Image, mimeType) {
     "Content-Type":      "application/json"
   }, {
     model: "claude-haiku-4-5-20251001", max_tokens: 300,
-    system: `Product photo tagger for jewelry/accessories. Respond ONLY with JSON:
-{"category":"<type>","type":"<specific>","colors":["<color>"],"materials":["<material>"],"style":"<style>","tags":["<6-10 tags>"]}`,
+    system: `You are a jewelry visual similarity analyzer. Respond ONLY with JSON no markdown:
+{
+  "category": "<anklet|bracelet|earring|necklace|ring|phone chain|waist chain|hair tie|eyewear|hand chain>",
+  "style": "<delicate|chunky|minimalist|statement|layered|classic|bohemian>",
+  "shape": "<chain|pendant|hoop|stud|cuff|bangle|drop|cluster|bar|coin|cross|heart|geometric>",
+  "metal": "<gold|silver|rose gold|rhodium|gunmetal|mixed>",
+  "stone": "<none|crystal|pearl|turquoise|amazonite|malachite|amber|quartz|enamel|shell|resin|other>",
+  "stone_color": "<none|white|black|blue|green|pink|purple|red|orange|yellow|brown|multicolor>",
+  "chain_style": "<none|cable|snake|box|rope|figaro|curb|ball|link|paperclip>",
+  "length": "<short|medium|long|adjustable>",
+  "colors": ["<color>"],
+  "tags": ["<10 specific visual tags>"]
+}`,
     messages: [{ role: "user", content: [
       { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
       { type: "text",  text: "Tag this product." }
     ]}]
   });
   const text = result.body?.content?.find(b => b.type === "text")?.text || "{}";
-  try { return JSON.parse(text.replace(/```json|```/g,"").trim()); }
-  catch { return { category:"", type:"", colors:[], materials:[], style:"", tags:[] }; }
+  try {
+    const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+    parsed.vector = descriptionToVector(parsed);
+    return parsed;
+  }
+  catch { return { category:"", style:"", shape:"", metal:"", stone:"none", stone_color:"none", chain_style:"none", length:"", colors:[], tags:[], vector:[] }; }
+}
+
+// ─── Visual similarity ────────────────────────────────────────────────────
+function descriptionToVector(desc) {
+  const categories  = ["anklet","bracelet","earring","necklace","ring","phone chain","waist chain","hair tie","eyewear","hand chain"];
+  const styles      = ["delicate","chunky","minimalist","statement","layered","classic","bohemian"];
+  const shapes      = ["chain","pendant","hoop","stud","cuff","bangle","drop","cluster","bar","coin","cross","heart","geometric"];
+  const metals      = ["gold","silver","rose gold","rhodium","gunmetal","mixed"];
+  const stones      = ["none","crystal","pearl","turquoise","amazonite","malachite","amber","quartz","enamel","shell","resin","other"];
+  const stoneColors = ["none","white","black","blue","green","pink","purple","red","orange","yellow","brown","multicolor"];
+  const chainStyles = ["none","cable","snake","box","rope","figaro","curb","ball","link","paperclip"];
+  const lengths     = ["short","medium","long","adjustable"];
+  const oneHot = (arr, val) => arr.map(v => v === (val||"").toLowerCase() ? 1 : 0);
+  return [
+    ...oneHot(categories,  desc.category),
+    ...oneHot(styles,      desc.style),
+    ...oneHot(shapes,      desc.shape),
+    ...oneHot(metals,      desc.metal),
+    ...oneHot(stones,      desc.stone),
+    ...oneHot(stoneColors, desc.stone_color),
+    ...oneHot(chainStyles, desc.chain_style),
+    ...oneHot(lengths,     desc.length),
+  ];
+}
+
+function cosineSimilarity(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot=0, magA=0, magB=0;
+  for (let i=0; i<a.length; i++) { dot+=a[i]*b[i]; magA+=a[i]*a[i]; magB+=b[i]*b[i]; }
+  const denom = Math.sqrt(magA)*Math.sqrt(magB);
+  return denom===0 ? 0 : dot/denom;
 }
 
 function extractWords(obj) {
@@ -304,13 +390,29 @@ function extractWords(obj) {
 }
 
 function scoreAll(photos, queryDesc) {
-  const qW = extractWords(queryDesc);
+  const queryVector = queryDesc.vector ? queryDesc.vector : descriptionToVector(queryDesc);
+  const qW          = extractWords(queryDesc);
+  const hasVectors  = photos.some(p => p.vector && p.vector.length > 0);
+
   return photos.map(photo => {
-    const pW = extractWords(photo.tags || {});
-    let m = 0; qW.forEach(w => { if (pW.has(w)) m++; });
-    const score = Math.min(Math.round(((m/(qW.size||1))*0.7+(m/(pW.size||1))*0.3)*100),99);
+    let score = 0;
+    if (hasVectors && photo.vector && photo.vector.length > 0) {
+      // Visual embedding similarity (primary — 70% weight)
+      const visualSim  = cosineSimilarity(queryVector, photo.vector);
+      // Keyword similarity (secondary — 30% weight)
+      const pW         = extractWords(photo.tags || {});
+      let   kwMatches  = 0;
+      qW.forEach(w => { if (pW.has(w)) kwMatches++; });
+      const kwSim      = kwMatches / (qW.size || 1);
+      score = Math.min(Math.round((visualSim * 0.7 + kwSim * 0.3) * 100), 99);
+    } else {
+      // Fallback: keyword only
+      const pW = extractWords(photo.tags || {});
+      let m = 0; qW.forEach(w => { if (pW.has(w)) m++; });
+      score = Math.min(Math.round(((m/(qW.size||1))*0.7+(m/(pW.size||1))*0.3)*100), 99);
+    }
     return { photo, score };
-  }).filter(r => r.score > 0).sort((a,b) => b.score-a.score).slice(0,6);
+  }).filter(r => r.score > 0).sort((a,b) => b.score-a.score).slice(0,30);
 }
 
 // ─── HTTP helpers ──────────────────────────────────────────────────────────
